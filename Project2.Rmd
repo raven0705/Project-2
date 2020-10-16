@@ -1,0 +1,137 @@
+---
+title: "Project2"
+author: "Raven Chen, Rahil Patel, Jake Gandolfo, Austin Morton, Leo Li"
+date: "10/10/2020"
+output: html_document
+---
+
+```{r include=FALSE}
+library(tidyverse)
+loans = read.csv("ProjectA_Listings2013.csv")
+#View(loans)
+#str(loans)
+```
+
+```{r}
+loans = loans %>% select(-loan_status, -loan_origination_date, -income_range, -borrower_city,
+                        -first_recorded_credit_line, -total_trade_items, -now_delinquent_derog,
+                        -delinquencies_over90_days) # removing these columns
+#str(data)
+```
+
+```{}
+First removing columns with unrelated or repeated information, and those that are linear combinations of other columns (otherwise would show up as NA in lm models). We also checked whether any data cleaning is needed, but all columns seem to have the correct data types and reasonable values, so this step is already done.
+```
+
+## 1. Linear Regression Model
+```{r}
+mod1 = lm(borrower_rate ~ . , data = loans)
+summary(mod1)
+```
+
+```{}
+Model 1: 
+    Running a simple linear regression model that includes all the predictors, we observed that this is already a well-fitted model, with an adjusted r-squared value of 0.95 and a p-value of almost zero. 
+    Some predictors with high significance include number_of_days, principal_balance, loan_status, amount_funded, prosper_rating, listing_term, listing_monthly_payment, scorex, prosper_score, listing_category_id, occupation, lender_indicator, monthly_debt, lender_indicator, current_credit_lines, open_credit_lines, total_open_revolving_accounts, total_inquiries, is_homeowner, all of which make logical sense that they should be important factors to be considered in determining interest rate for loans. 
+    However, one predictor that we think should also be a crucial "risk factor" that did not get reflected in this model is income_range, and potentially other related variables such as employment_status and stated_monthly_income. To find out why this is the case, we then looked at the direct relationship between income_range and borrower_rate.
+```
+
+```{r}
+summary(lm(borrower_rate ~ income_range_description , data = loans))
+
+loans %>% ggplot() + geom_boxplot(aes(income_range_description, borrower_rate))
+```
+```{}
+As can be seen above, there is a clear negative linear relationship between income and borrower rate, meaning that people with higher income tend to receive better/lower interest rate. 
+Thus we hypothesized that perhaps there were too many predictors in model 1 that the effect of some variables that should be critical "risk factors" such as income got obscured. In the next model, we will remove all the insignificant predictors in model 1 and test if income gets a better performance.
+```
+
+```{r}
+loans2 = loans %>% select(-dti_wprosper_loan, -borrower_state, -current_delinquencies, -delinquencies_last7_years, -public_records_last10_years, -public_records_last12_months, -credit_lines_last7_years, -amount_delinquent,  -installment_balance, -real_estate_balance, -revolving_balance, -real_estate_payment, -revolving_available_percent, -satisfactory_accounts, -was_delinquent_derog, -delinquencies_over60_days)
+
+mod2 = lm(borrower_rate ~ . , data = loans2)
+summary(mod2)
+```
+```{}
+Model 2:
+    After removing more columns to test whether some variables will get a better performance, we observed that this is also not the case. Income_range still has a p-value of around 0.4, meaning that it is statistically insignificant in this model. 
+    One possible explanation is that perhaps the effect of income_range has already been explained by other related predictors such as occupation and stated-monthly income.
+    In the next modification of linear model, we will use an alpha of 0.05 and get rid of all the insignificant predictors.
+```
+
+```{r}
+loans3 = loans2 %>% select(-income_range_description, -income_verifiable, -months_employed, -current_credit_lines)
+
+mod3 = lm(borrower_rate ~ . , data = loans3)
+summary(mod3)
+```
+
+```{}
+Linear Model Conclusion:
+    The above model contains all the significant predictors with a p-value less than 0.05. It can be seen that when determining interest rates, market looks at a variety of factors including not only the basic characteristics of the loan, but credibility, liability, employment, and the general financial background of the individual.
+    It is also worth noting that many factors such as income_range and installment_balance which have a clear linear relationship with borrower rate when modeling independently do not show up as significant "risk factors" when incorporated into the overall model. 
+```
+
+## 2. Logistic Model
+
+
+```{}
+Before doing a logistc model, it is helpful to view the interactions between the variables in the dataset. In the correlation matrix below, we filtered the data to view all correlation that are greater than 0.9. Any two variables that have a correlation above a 0.9 needs to be removed due to multicolinearity. In regression, the goal is to isolate the relationship between each independent and dependent variable. If independent variables are correlated, this creates a problem for our analysis. 
+```
+
+```{r}
+fac_var <- c("loan_status_description", "prosper_rating", "scorex", "income_range_description", "employment_status_description", "occupation", "borrower_state", "is_homeowner", "income_verifiable")
+loans_corr <- loans
+loans_corr[fac_var] <- lapply(loans_corr[fac_var], as.numeric)
+corr <- round(cor(loans_corr), 2)
+threshold <- 0.9
+cc <- corr
+diag(cc) <- 0
+ok <- apply(abs(cc) >= threshold, 1, any)
+cc1 <- cc[ok,ok]
+ggcorrplot::ggcorrplot(cc1, type = "lower", lab = FALSE) + ggtitle("Loans Correlation Matrix")
+```
+
+```{r}
+loans_cleaned <- loans %>% select(-c(listing_monthly_payment, dti_wprosper_loan, open_credit_lines, credit_lines_last7_years))
+logistic1 <- glm(borrower_rate ~ . , data = loans_corr)
+```
+
+```{r}
+an <- anova(logistic1, test = "Chisq")
+an
+```
+
+```{r}
+#Getting a list of the variables that have a significant p-value
+sig_var <- an[which(an$`Pr(>Chi)` < 0.5),]
+sig_var <- rownames(sig_var)
+sig_var <- c(sig_var,"borrower_rate")
+loans_model <- loans[,sig_var]
+logistic2 <- glm(borrower_rate ~ . , data = loans_model)
+an <- anova(logistic2, test = "Chisq")
+an
+```
+
+
+```{r}
+#Getting a list of the variables that have a significant p-value from model 2
+sig_var <- an[which(an$`Pr(>Chi)` < 0.5),]
+sig_var <- rownames(sig_var)
+sig_var <- c(sig_var,"borrower_rate")
+loans_model <- loans[,sig_var]
+logistic3 <- glm(borrower_rate ~ . , data = loans_model)
+an <- anova(logistic3, test = "Chisq")
+an
+```
+
+```{r}
+#Getting a list of the variables that have a significant p-value from model 2
+sig_var <- an[which(an$`Pr(>Chi)` < 0.01),]
+sig_var <- rownames(sig_var)
+sig_var <- c(sig_var,"borrower_rate")
+loans_model <- loans[,sig_var]
+logistic4 <- glm(borrower_rate ~ . , data = loans_model)
+an <- anova(logistic4, test = "Chisq")
+an
+```
