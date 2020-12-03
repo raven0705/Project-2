@@ -1,0 +1,302 @@
+---
+title: "Project 2"
+author: "Jake Gandolfo, Leo Li, Rahil Patel, Raven Chen, Austin Morton"
+date: "11/23/2020"
+output: html_document
+---
+
+# Load Necessary Libraries Needed
+```{r}
+my_packages <- c("dplyr", "ggplot2", "ggthemes", "tidyverse", "gmodels", "C50", "neuralnet", "kernlab", "stringr", "lattice")
+library(easypackages)
+libraries(my_packages)
+```
+
+# Import and Clean the Data
+```{r}
+
+setwd("/Users/RahilPatel/Desktop/TO 414")
+## import data
+
+bank <- read.csv("bank.csv", sep = ";")
+View(bank)
+
+## clean the data
+
+bank <- bank %>%
+  select(-c(day, month))
+bank_old <- bank
+bank$default <- as.factor(bank$default)
+bank$job <-  as.factor(bank$job)
+bank$marital <- as.factor(bank$marital)
+bank$education <- as.factor(bank$education)
+bank$housing <- as.factor(bank$housing)
+bank$loan <- as.factor(bank$loan)
+bank$contact <- as.factor(bank$contact)
+bank$poutcome <- as.factor(bank$poutcome)
+bank$y <- as.numeric(bank$y)-1
+str(bank)
+
+```
+
+```{r}
+# train and test sets
+set.seed(9999)
+bank <- bank[sample(nrow(bank)),]
+
+# logistic model
+#LR = glm(y ~ ., data = bank)
+
+#LR_pred_prob = predict(LR, bank)
+#LR_pred = ifelse(LR_pred_prob > 0.5, 1, 0)
+#CrossTable(bank_random$y, LR_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE)
+
+# kappa statistics
+kappa = function(TN, FP, FN, TP){
+    n = TN + FP + FN + TP
+    accuracy = (TN + TP) / n
+    col_total_prop_0 = (TN + FN) / n
+    col_total_prop_1 = (TP + FP) / n
+    row_total_prop_0 = (TN + FP) / n
+    row_total_prop_1 = (TP + FN) / n
+    error_rate = col_total_prop_0 * row_total_prop_0 + col_total_prop_1 * row_total_prop_1
+    kappa = (accuracy - error_rate) / (1 - error_rate)
+    return (kappa)
+}
+
+kappa(3934, 66, 388, 133)
+```
+
+```{}
+The data we are examing relates to a Portgese Bank. They are conducting a direct marketing campaign to determine if clients would subscruibe to a term deposit. This was done through phone calls directly to the clients.
+
+A term deposit locks away money for an agreed upon length (term), which means you cannot access the money until the term is up. In return, you get a guaranteed rate of interest, so you are locked into a future sum of money.
+
+Before predicting whether a client would lock their money up for an extended period, it is important to gain an understadning of the type of data that we are working with. We decided that it would be helpful to create some graphic visualizations of the data and see if there are any trends that are worth noting. 
+```
+
+```{}
+To get an understanding of the demographics we are working with, we decided to breakdown occupations by age. This data seems pretty in line with a dataset that represents a large segment of the overall population. Intuitively, people with higher paying jobs would have more free cash flow to give to a bank. However, term deposits are not necessarily good invesmtnets, given their low guaranteed rate of return. Therefore, it may be important to look at education as a factor in determining whether somebody will give their money to a bank.
+```
+
+
+```{r}
+ggplot(data = bank, aes(x = job, y = age)) + geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) + xlab("Job") + 
+  ylab("Age")+ 
+  ggtitle("Employment Status by Age") + 
+  theme_stata()
+```
+
+```{}
+The boxplot below looks at outstanding loan balance by marital status. These results are pretty in line with typical trends that we tend to see in America. Married couples have higher outstanding loan balance since they have a larger household. 
+```
+
+
+```{r}
+ggplot(data = bank, aes(x = marital, y = balance)) + geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) + xlab("Marital Status") + 
+  ylab("Outstanding Balance")+ 
+  ggtitle("Outstanding Balance By Marital Status") + 
+  theme_stata()
+```
+
+```{r}
+ggplot(data = bank, aes(x = education, y = balance)) + geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) + xlab("Education") + 
+  ylab("Outstanding Balance")+ 
+  ggtitle("Outstanding Balance By Education") + 
+  theme_stata()
+```
+```{}
+We examined the duration of phone calls to clients based on their education (see the boxplot below). These findings were interesting - there does not appear to be a big difference across the educational levels. This could mean that education may not be a significant predictor of whether somebody will suscribe to the term deposit program. We will find out more when we conduct of statistical analysis. 
+```
+
+
+```{r}
+ggplot(data = bank, aes(x = education, y = duration)) + geom_boxplot(outlier.colour="black", outlier.shape=16, outlier.size=2, notch=FALSE) + xlab("Education") + 
+  ylab("Duration")+ 
+  ggtitle("Phone Call By Education") + 
+  theme_stata()
+```
+
+
+```{r}
+xyplot(duration ~ balance, data = bank,
+      main = "Client Phone Call Duration as a Function of Loan Balance",
+      panel = function(x, y, ...) {
+      panel.xyplot(x, y, ...)
+      panel.lmline(x, y, col = "red")
+      })
+```
+```{r}
+xyplot(duration ~ balance | marital, 
+    data = bank,
+    main = "Phone Call Duration By Loan Balance and Marital Status",
+    key=list(space="right",
+         lines=list(col=c("red","black"), lty=1, lwd=2),
+         text=list(c("Linear Fit","Non Linear Fit"))),
+      panel = function(x, y, ...) {
+      panel.xyplot(x, y, ...)
+      panel.xyplot(x, y, type = "smooth", col = "black", lwd = 2,...)
+      panel.lmline(x, y, col = "red", lwd = 2)
+      })
+```
+```{r}
+xyplot(duration ~ balance | education, 
+    data = bank,
+    main = "Phone Call Duration By Loan Balance and Education",
+    key=list(space="right",
+         lines=list(col=c("red","black"), lty=1, lwd=2),
+         text=list(c("Linear Fit","Non Linear Fit"))),
+      panel = function(x, y, ...) {
+      panel.xyplot(x, y, ...)
+      panel.xyplot(x, y, type = "smooth", col = "black", lwd = 2,...)
+      panel.lmline(x, y, col = "red", lwd = 2)
+      })
+```
+
+```{r}
+bank_dummy <- as.data.frame(model.matrix(~.-1,bank))
+bank_normalize <- as.data.frame(lapply(bank_dummy, normalize))
+bank_train <- bank_dummy[1:4069,]
+bank_test <- bank_dummy[4070:4521,]
+```
+
+```{}
+Before doing a logistc model, it is helpful to view the interactions between the variables in the dataset. In the correlation matrix below, we filtered the data to view all correlation that are greater than 0.9. Any two variables that have a correlation above a 0.9 needs to be removed due to multicolinearity. In regression, the goal is to isolate the relationship between each independent and dependent variable. If independent variables are correlated, this creates a problem for our analysis. 
+```
+
+```{r}
+
+bank_corr <- bank_old
+fac_var <- c("job", "marital", "education", "default", "housing", "loan", "contact", "poutcome", "y")
+bank_corr[fac_var] <- lapply(bank_corr[fac_var], as.numeric)
+corr <- round(cor(bank_corr), 2)
+threshold <- 0.1
+cc <- corr
+diag(cc) <- 0
+ok <- apply(abs(cc) >= threshold, 1, any)
+cc1 <- cc[ok,ok]
+ggcorrplot::ggcorrplot(cc1, type = "lower", lab = FALSE) + ggtitle("Bank Data Correlation Matrix")
+```
+
+```{r}
+bank_logistic <- glm(y ~ ., data = bank_train)
+```
+
+```{r}
+summary(bank_logistic)
+an <- anova(bank_logistic, test = "Chisq")
+an
+```
+
+```{}
+In our logistic model above, we can see that there are several significant predictors of subscription. The variables that are significant make sense intuitively. However, we did find it surprising that some of the variables were not significant. Specifically, we were surprised that default is not a significant predictor. When somebody is in default, one would think that they do not have the income to contribute to a term deposit program. The same goes for outstanding balance. We will examine in further models if this is consistent with what the logistic model found. 
+
+After training our initial logistic model, we refined it to filter out all significant predicors (found in the code chunk below)
+```
+
+
+```{r}
+confint(bank_logistic, level = 0.95)
+```
+
+```{r}
+layout(matrix(c(1,2,3,4),2,2))
+plot(bank_logistic)
+```
+
+```{r}
+sig_var <- an[which(an$`Pr(>Chi)` < 0.05),]
+sig_var <- rownames(sig_var)
+sig_var <- c(sig_var,"y")
+sig_var <- str_remove_all(sig_var, "`")
+log_model <- bank_train[,sig_var]
+bank_logistic <- glm(y ~ . , data = log_model)
+an <- anova(bank_logistic, test = "Chisq")
+an
+```
+
+```{r}
+data_labels <- bank_test[, "y"]
+logistic_prediction <- predict(bank_logistic, newdata = bank_test, type = "response")
+logistic_prediction <- ifelse(logistic_prediction < 0.5, 0, 1)
+
+CrossTable(x = data_labels, y = logistic_prediction, prop.chisq = F)
+confusionMatrix(as.factor(logistic_prediction), as.factor(data_labels), positive = "1")
+```
+
+```{r}
+normalize <- function(x){
+  return ((x - min(x) / max(x) - min(x)))
+}
+```
+
+
+
+```{r}
+data_labels <- bank_test[,"y"]
+k_ <- sqrt(nrow(bank_normalize))
+train_set <- bank_train %>% select(-y)
+test_set <- bank_test %>% select(-y)
+predict_knn <- knn(train = train_set, test = test_set, cl = bank_train$y, k = k_)
+CrossTable(x = data_labels, y = predict_knn, prop.chisq = F)
+confusionMatrix(as.factor(predict_knn), as.factor(data_labels), positive = "1")
+```
+
+
+```{r}
+bank_train_c5 <- bank_train
+bank_train_c5$y <- as.factor(bank_train_c5$y)
+mod <- C5.0(y ~ ., data = bank_train_c5)
+predict_tree <- predict(mod, newdata = test_set)
+plot(mod)
+```
+
+```{r}
+summary(mod)
+```
+
+```{r}
+CrossTable(x = data_labels, y = predict_tree, prop.chisq = F)
+confusionMatrix(as.factor(predict_tree), as.factor(data_labels), positive = "1")
+```
+
+```{r}
+#not working for some reason
+ann_model <- neuralnet(formula = y ~ ., data = bank_train)
+plot(ann_model)
+
+model_results <- compute(ann_model, bank_test)
+predicted_ann <- model_results$net.result
+predicted_ann <- ifelse(predicted_ann[,1] >= 0.5, 1, 0)
+CrossTable(x = data_labels, y = predicted_ann, prop.chisq = F)
+confusionMatrix(as.factor(predicted_ann), as.factor(data_labels), positive = "1")
+```
+
+```{r}
+
+bank_classifer <- ksvm(y ~., data = bank_train, kernel = "vanilladot")
+
+
+# look at basic information about the model
+bank_classifer
+
+## Step 3: Evaluating model performance 
+# predictions on testing dataset
+svm_predictions <- predict(bank_classifer, bank_test)
+svm_predictions <- ifelse(svm_predictions >= 0.5, 1, 0)
+```
+
+```{r}
+CrossTable(x = data_labels, y = svm_predictions, prop.chisq = F)
+confusionMatrix(as.factor(svm_predictions), as.factor(data_labels), positive = "1")
+```
+```{r}
+#doesnt have predict_knn right now since its not working above. must add after fixed
+predict_df <- data.frame(data_labels, logistic_prediction, predict_tree, svm_predictions)
+set.seed(12345)
+predict_df$data_labels <- as.factor(predict_df$data_labels)
+predict_df$logistic_prediction <- as.factor(predict_df$logistic_prediction)
+predict_df$svm_predictions <- as.factor(predict_df$svm_predictions)
+subscribe_model <- C5.0(data_labels ~. , data = predict_df)
+new_predict <- predict(subscribe_model, predict_test)
+```
